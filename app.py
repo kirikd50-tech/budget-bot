@@ -204,5 +204,20 @@ def webhook():
 def home():
     return 'Bot is running!'
 
+# ========== ТЕСТОВЫЙ МАРШРУТ ==========
+@app.route('/test-creds')
+def test_creds():
+    import os
+    import json
+    try:
+        creds_json = os.environ.get('GOOGLE_CREDS')
+        if not creds_json:
+            return "❌ GOOGLE_CREDS не найдена"
+        
+        creds_dict = json.loads(creds_json)
+        return f"✅ JSON корректен! client_email: {creds_dict.get('client_email', 'не найден')}"
+    except Exception as e:
+        return f"❌ Ошибка: {str(e)}"
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
