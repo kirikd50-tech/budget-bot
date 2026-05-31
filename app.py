@@ -23,7 +23,7 @@ SHEET_ID = '1SCRNSvorQKItq_hPZiZPL1iGq0c2byQBc79VYiEz2Xw'
 
 user_data = {}
 categories_cache = {}
-CACHE_TIME = 3600  # 1 час
+CACHE_TIME = 3600
 
 def get_sheet():
     try:
@@ -43,28 +43,26 @@ def get_sheet():
         return None
 
 def get_categories(month_name):
-    # Проверяем кэш
     if month_name in categories_cache:
         cache_time, categories = categories_cache[month_name]
         if time.time() - cache_time < CACHE_TIME:
             print(f"Категории из кэша: {month_name}")
             return categories
     
+    print(f"Загружаем категории для {month_name}...")
     try:
         sheet = get_sheet()
         if not sheet:
             return ['Продукты', 'Одежда', 'Развлечения', 'Здоровье', 'Транспорт', 'Кафе', 'Аптека']
 
         worksheet = sheet.worksheet(month_name)
+        all_values = worksheet.get_all_values()
+        
         categories = []
-        for row_num in range(CATEGORY_START_ROW, 36):
-            try:
-                cell_value = worksheet.cell(row_num, 2).value
-                if cell_value and cell_value.strip():
-                    categories.append(cell_value.strip())
-            except:
-                continue
-
+        for row in all_values[CATEGORY_START_ROW-1:]:
+            if len(row) > 1 and row[1] and row[1].strip():
+                categories.append(row[1].strip())
+        
         categories = list(dict.fromkeys(categories))
         categories_cache[month_name] = (time.time(), categories)
         print(f"Загружено {len(categories)} категорий для {month_name}")
@@ -80,15 +78,24 @@ def save_expense(month_name, category, amount):
             return False
 
         worksheet = sheet.worksheet(month_name)
+        
+        # ОПТИМИЗАЦИЯ: один запрос на чтение всех строк столбца E
+        all_e = worksheet.col_values(5)  # столбец E
+        
+        # Находим первую пустую строку
         row = DROPDOWN_START_ROW
-        while True:
-            cell_value = worksheet.cell(row, 5).value
-            if not cell_value or cell_value.strip() == '':
+        while row <= len(all_e):
+            if row > len(all_e) or not all_e[row-1] or all_e[row-1].strip() == '':
                 break
             row += 1
-            if row > 100:
-                return False
-
+        
+        # Если дошли до конца списка, добавляем новую строку
+        if row > len(all_e):
+            row = len(all_e) + 1
+        if row < DROPDOWN_START_ROW:
+            row = DROPDOWN_START_ROW
+        
+        # Один запрос на запись
         worksheet.update_cell(row, 5, category)
         worksheet.update_cell(row, 6, amount)
         print(f"Сохранено: {month_name}, {category}, {amount}, строка {row}")
@@ -191,7 +198,7 @@ def webhook():
                     if save_expense(month, category, amount):
                         send_message(chat_id, f'✅ Расход добавлен!\n📅 {month}\n📂 {category}\n💰 {amount} ₽')
                     else:
-                        send_message(chat_id, '❌ Ошибка при сохранении. Проверьте, что лист существует и у бота есть доступ к таблице.')
+                        send_message(chat_id, '❌ Ошибка при сохранении')
                     
                     if chat_id in user_data:
                         del user_data[chat_id]
@@ -199,7 +206,7 @@ def webhook():
                     keyboard = {"inline_keyboard": [[{"text": "➕ Добавить расход", "callback_data": "add_expense"}]]}
                     send_message(chat_id, '🏠 Главное меню', keyboard)
                 except ValueError:
-                    send_message(chat_id, '❌ Введите корректную сумму (например: 500)')
+                    send_message(chat_id, '❌ Введите корректную сумму')
         
         return 'OK', 200
     except Exception as e:
